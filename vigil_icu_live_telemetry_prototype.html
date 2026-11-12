@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIGIL_ICU — Intelligent Telemetry Triage & Alarm Suppression Engine</title>
+  <!-- Tailwind CSS for responsive layout & clean clinical styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono for clinical telemetry readouts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome for clinical & status icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    /* Custom clinical telemetry styling & animations */
+    body {
+      background-color: #0b1120;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .clinical-card {
+      background-color: #131c31;
+      border: 1px solid #23304d;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bed-suppressed {
+      border-color: #f59e0b !important;
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.15);
+    }
+
+    .bed-deteriorating {
+      border-color: #fb923c !important;
+      box-shadow: 0 0 18px rgba(251, 146, 60, 0.22);
+    }
+
+    .bed-critical {
+      border-color: #ef4444 !important;
+      animation: criticalPulse 1.3s infinite ease-in-out;
+    }
+
+    @keyframes criticalPulse {
+      0%, 100% {
+        box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
+      }
+      50% {
+        box-shadow: 0 0 28px rgba(239, 68, 68, 0.9);
+      }
+    }
+
+    /* Custom subtle scrollbars for triage log */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1120;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #23304d;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-6">
+
+  <!-- TOP CLINICAL HEADER & LIVE KPI STRIP -->
+  <header class="clinical-card rounded-2xl p-4 md:p-5 mb-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <!-- Branding & Active Ward Status -->
+    <div class="flex items-start sm:items-center gap-3.5">
+      <div class="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center shrink-0">
+        <i class="fa-solid fa-heart-pulse text-blue-400 text-2xl animate-pulse"></i>
+      </div>
+      <div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <h1 class="text-xl md:text-2xl font-extrabold tracking-tight text-white">VIGIL_ICU</h1>
+          <span class="px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            Stream Engine Active
+          </span>
+          <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+            WARD-4A • HIGH ACUITY
+          </span>
+        </div>
+        <p class="text-xs md:text-sm text-slate-400 mt-1">
+          Context-Aware Multi-Parameter Telemetry Fusion &amp; Alarm Fatigue Suppression Console
+        </p>
+      </div>
+    </div>
+
+    <!-- Live KPI Counters & Audio Control -->
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- KPI 1: Raw Monitor Triggers -->
+      <div class="bg-[#0b1120] border border-[#23304d] rounded-xl px-4 py-2.5 min-w-[135px]">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Raw Monitor Triggers</span>
+        <strong id="kpi-raw" class="mono text-xl font-bold text-slate-200 mt-0.5 block">148</strong>
+      </div>
+
+      <!-- KPI 2: False Alarms Suppressed -->
+      <div class="bg-[#0b1120] border border-amber-500/30 rounded-xl px-4 py-2.5 min-w-[175px]">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-amber-400/90 block">False Alarms Suppressed</span>
+        <strong id="kpi-suppressed" class="mono text-xl font-bold text-amber-400 mt-0.5 block">144 (97.3%)</strong>
+      </div>
+
+      <!-- KPI 3: Actionable Tier-1 Escalations -->
+      <div class="bg-[#0b1120] border border-red-500/30 rounded-xl px-4 py-2.5 min-w-[155px]">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-red-400/90 block">Tier-1 Escalations</span>
+        <strong id="kpi-critical" class="mono text-xl font-bold text-red-400 mt-0.5 block">4</strong>
+      </div>
+
+      <!-- Audio Alert Toggle -->
+      <button id="audio-toggle-btn" onclick="toggleAudio()" class="bg-[#0b1120] hover:bg-slate-800 border border-[#23304d] rounded-xl px-3.5 py-3 flex items-center gap-2 text-xs font-bold text-slate-200 transition cursor-pointer" title="Toggle Tier-1 Audio Chime">
+        <i id="audio-icon" class="fa-solid fa-volume-high text-emerald-400 text-base"></i>
+        <span id="audio-label">Audio ON</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- HACKATHON LIVE SIMULATOR CONTROL BAR -->
+  <section class="bg-gradient-to-r from-[#131c31] via-[#17233d] to-[#131c31] border border-blue-500/40 rounded-2xl p-4 mb-6 shadow-lg">
+    <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3.5">
+      <div class="flex items-center gap-2.5">
+        <span class="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-extrabold uppercase tracking-wider">
+          <i class="fa-solid fa-bolt mr-1"></i> Live Demo Simulator
+        </span>
+        <span class="text-xs md:text-sm text-slate-300 font-medium">
+          Inject real-time bedside telemetry anomalies to test VIGIL_ICU's multi-vital fusion logic:
+        </span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2.5">
+        <!-- Simulation 1: Probe Slip / Motion Artifact -->
+        <button onclick="simulateProbeSlip()" class="px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/50 text-xs font-bold transition flex items-center gap-2 cursor-pointer">
+          <i class="fa-solid fa-wave-square"></i>
+          Simulate Probe Slip / Motion Artifact (Bed 02)
+        </button>
+
+        <!-- Simulation 2: Multi-Vital Shock Event -->
+        <button onclick="simulateShockEvent()" class="px-3.5 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-600 text-red-200 hover:text-white border border-red-500/60 text-xs font-bold transition flex items-center gap-2 cursor-pointer">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Simulate Multi-Vital Shock Event (Bed 03)
+        </button>
+
+        <!-- Simulation 3: Progressive Deterioration -->
+        <button onclick="simulateProgressiveDeterioration()" class="px-3.5 py-2.5 rounded-xl bg-orange-500/20 hover:bg-orange-500 text-orange-200 hover:text-slate-950 border border-orange-500/50 text-xs font-bold transition flex items-center gap-2 cursor-pointer">
+          <i class="fa-solid fa-chart-line"></i>
+          Simulate Progressive Deterioration (Bed 01)
+        </button>
+
+        <!-- Reset Ward -->
+        <button onclick="resetWard()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-bold transition flex items-center gap-2 cursor-pointer">
+          <i class="fa-solid fa-rotate-left"></i>
+          Reset Ward to Baseline
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN WORKSPACE: 4-BED TELEMETRY GRID + TRIAGE ENGINE LOG SIDEBAR -->
+  <main class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+    
+    <!-- LEFT 8 COLS: 4-BED ICU MONITORING GRID -->
+    <div class="xl:col-span-8">
+      <div class="flex items-center justify-between mb-3 px-1">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          <i class="fa-solid fa-bed-pulse text-blue-400"></i>
+          Active ICU Bedside Telemetry Streams (1Hz Sampling)
+        </h2>
+        <span id="stream-clock" class="mono text-xs text-slate-400">SYNC: --:--:--</span>
+      </div>
+
+      <div id="beds-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Dynamically rendered bed cards -->
+      </div>
+    </div>
+
+    <!-- RIGHT 4 COLS: SIGNAL FUSION & TRIAGE ENGINE LOG SIDEBAR -->
+    <aside class="xl:col-span-4 clinical-card rounded-2xl p-4 md:p-5 flex flex-col h-[660px]">
+      <div class="border-b border-[#23304d] pb-3.5 mb-3.5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-microchip text-blue-400"></i>
+            Signal Fusion &amp; Triage Log
+          </h2>
+          <button onclick="clearLogs()" class="text-[11px] font-semibold text-slate-400 hover:text-white underline cursor-pointer">
+            Clear Log
+          </button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">
+          Real-time multi-parameter correlation math &amp; clinical suppression audit trail
+        </p>
+      </div>
+
+      <!-- Fusion Formula Legend -->
+      <div class="bg-[#0b1120] border border-[#23304d] rounded-xl p-3 mb-3 text-[11px] text-slate-300 space-y-1">
+        <div class="font-bold text-blue-300 uppercase tracking-wider flex items-center justify-between">
+          <span>Active Triage Rule Engine</span>
+          <span class="mono text-[10px] text-slate-400">v2.4-FUSION</span>
+        </div>
+        <p class="text-slate-400 leading-relaxed">
+          • <span class="text-amber-400 font-semibold">Suppress:</span> Single-sensor spike (&Delta;SpO₂ &gt; 8% in &lt;3s) with stable &Delta;HR &lt; 10% &amp; &Delta;SBP &lt; 10%.<br>
+          • <span class="text-red-400 font-semibold">Escalate Tier-1:</span> Shock Index (HR/SBP) &ge; 1.1 OR multi-vital breach across &ge;2 parameters.
+        </p>
+      </div>
+
+      <!-- Scrollable Log Feed -->
+      <div id="triage-log-feed" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+        <!-- Logs injected here -->
+      </div>
+    </aside>
+
+  </main>
+
+  <script>
+    /**
+     * VIGIL_ICU Live Telemetry Triage & Alarm Suppression Engine
+     * Simulates 1Hz multi-parameter vital streams, sliding window correlation,
+     * artifact suppression, progressive deterioration, and nurse escalation workflows.
+     */
+
+    // Initial Ward State
+    const initialBeds = () => [
+      {
+        id: "BED-01",
+        patient: "R. Sharma (64M)",
+        diagnosis: "Post-CABG Day 1",
+        nurse: "Nurse Kavita",
+        hr: 78,
+        spo2: 98,
+        sbp: 122,
+        status: "normal", // 'normal' | 'suppressed' | 'deteriorating' | 'critical'
+        statusNote: "All 3 vitals concordant within baseline",
+        history: Array.from({ length: 42 }, (_, i) => Math.sin(i * 0.45) * 8 + 78),
+        phase: 0,
+        deteriorationStep: 0,
+        ackRequired: false,
+        escalatedSeconds: 0
+      },
+      {
+        id: "BED-02",
+        patient: "A. Verma (52F)",
+        diagnosis: "Acute COPD Exacerbation",
+        nurse: "Nurse Riya",
+        hr: 84,
+        spo2: 95,
+        sbp: 118,
+        status: "normal",
+        statusNote: "All 3 vitals concordant within baseline",
+        history: Array.from({ length: 42 }, (_, i) => Math.sin(i * 0.5) * 9 + 84),
+        phase: 1.2,
+        deteriorationStep: 0,
+        ackRequired: false,
+        escalatedSeconds: 0
+      },
+      {
+        id: "BED-03",
+        patient: "M. Khan (71M)",
+        diagnosis: "Urosepsis / Hemodynamic Watch",
+        nurse: "Nurse Ananya",
+        hr: 88,
+        spo2: 96,
+        sbp: 114,
+        status: "normal",
+        statusNote: "All 3 vitals concordant within baseline",
+        history: Array.from({ length: 42 }, (_, i) => Math.sin(i * 0.55) * 10 + 88),
+        phase: 2.4,
+        deteriorationStep: 0,
+        ackRequired: false,
+        escalatedSeconds: 0
+      },
+      {
+        id: "BED-04",
+        patient: "S. Devi (45F)",
+        diagnosis: "TBI / Neuro Observation",
+        nurse: "Nurse Pooja",
+        hr: 72,
+        spo2: 99,
+        sbp: 126,
+        status: "normal",
+        statusNote: "All 3 vitals concordant within baseline",
+        history: Array.from({ length: 42 }, (_, i) => Math.sin(i * 0.4) * 7 + 72),
+        phase: 3.1,
+        deteriorationStep: 0,
+        ackRequired: false,
+        escalatedSeconds: 0
+      }
+    ];
+
+    let beds = initialBeds();
+    let kpiRaw = 148;
+    let kpiSuppressed = 144;
+    let kpiCritical = 4;
+    let audioEnabled = true;
+    let audioCtx = null;
+    let deteriorationInterval = null;
+
+    // Initialize / Toggle Web Audio API Clinical Chime
+    function toggleAudio() {
+      audioEnabled = !audioEnabled;
+      const icon = document.getElementById("audio-icon");
+      const label = document.getElementById("audio-label");
+      if (audioEnabled) {
+        icon.className = "fa-solid fa-volume-high text-emerald-400 text-base";
+        label.innerText = "Audio ON";
+        playClinicalChime("confirm");
+      } else {
+        icon.className = "fa-solid fa-volume-xmark text-slate-500 text-base";
+        label.innerText = "Audio Muted";
+      }
+    }
+
+    function playClinicalChime(type = "critical") {
+      if (!audioEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        if (type === "critical") {
+          // Urgent dual-pulse clinical alert tone (880Hz -> 1046Hz)
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(880, now);
+          osc.frequency.setValueAtTime(1046.5, now + 0.14);
+          gain.gain.setValueAtTime(0.14, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.36);
+        } else {
+          // Subtle confirmation blip
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(587.33, now);
+          gain.gain.setValueAtTime(0.06, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        }
+      } catch (err) {
+        // Ignore browser autoplay restrictions until user interacts
+      }
+    }
+
+    // Update Top KPI Strip
+    function updateKPIUI() {
+      document.getElementById("kpi-raw").innerText = kpiRaw;
+      const pct = kpiRaw > 0 ? ((kpiSuppressed / kpiRaw) * 100).toFixed(1) : "0.0";
+      document.getElementById("kpi-suppressed").innerText = `${kpiSuppressed} (${pct}%)`;
+      document.getElementById("kpi-critical").innerText = kpiCritical;
+    }
+
+    // Append structured entry to Signal Fusion Log Sidebar
+    function appendTriageLog({ title, bedId, formula, detail, level = "info" }) {
+      const feed = document.getElementById("triage-log-feed");
+      const timeStr = new Date().toLocaleTimeString("en-IN", { hour12: false });
+
+      const styles = {
+        info: {
+          border: "border-blue-500",
+          bg: "bg-[#0b1120]",
+          badge: "bg-blue-500/15 text-blue-300",
+          tag: "FUSION SYNC"
+        },
+        suppressed: {
+          border: "border-amber-500",
+          bg: "bg-amber-950/20",
+          badge: "bg-amber-500/20 text-amber-300",
+          tag: "NOISE SUPPRESSED"
+        },
+        warning: {
+          border: "border-orange-500",
+          bg: "bg-orange-950/25",
+          badge: "bg-orange-500/20 text-orange-300",
+          tag: "TREND WATCH"
+        },
+        critical: {
+          border: "border-red-500",
+          bg: "bg-red-950/30",
+          badge: "bg-red-500 text-white",
+          tag: "TIER-1 ESCALATION"
+        },
+        resolved: {
+          border: "border-emerald-500",
+          bg: "bg-emerald-950/20",
+          badge: "bg-emerald-500/20 text-emerald-300",
+          tag: "ACKNOWLEDGED"
+        }
+      };
+
+      const s = styles[level] || styles.info;
+      const entry = document.createElement("div");
+      entry.className = `${s.bg} border-l-4 ${s.border} rounded-r-xl p-3 text-xs transition-all`;
+      entry.innerHTML = `
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider ${s.badge}">${s.tag} • ${bedId}</span>
+          <span class="mono text-[10px] text-slate-400">${timeStr}</span>
+        </div>
+        <div class="font-bold text-slate-100 mb-1">${title}</div>
+        ${formula ? `<div class="mono text-[11px] text-slate-300 bg-black/30 px-2 py-1 rounded mb-1 border border-white/5">${formula}</div>` : ""}
+        <p class="text-slate-400 leading-relaxed">${detail}</p>
+      `;
+
+      feed.prepend(entry);
+    }
+
+    function clearLogs() {
+      document.getElementById("triage-log-feed").innerHTML = "";
+      appendTriageLog({
+        title: "Audit Log Cleared",
+        bedId: "SYSTEM",
+        detail: "Telemetry fusion engine continues active 1Hz monitoring across all 4 ICU beds.",
+        level: "info"
+      });
+    }
+
+    // Calculate Shock Index (HR / SBP)
+    function getShockIndex(bed) {
+      return (bed.hr / bed.sbp).toFixed(2);
+    }
+
+    // Render all 4 ICU Bed Cards
+    function renderBeds() {
+      const grid = document.getElementById("beds-grid");
+      grid.innerHTML = "";
+
+      beds.forEach((bed, index) => {
+        const shockIndex = parseFloat(getShockIndex(bed));
+
+        let cardStateClass = "";
+        let badgeHTML = "";
+        if (bed.status === "critical") {
+          cardStateClass = "bed-critical";
+          badgeHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-red-600 text-white flex items-center gap-1.5"><i class="fa-solid fa-bell animate-bounce"></i> TIER-1 ESCALATION</span>`;
+        } else if (bed.status === "suppressed") {
+          cardStateClass = "bed-suppressed";
+          badgeHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40"><i class="fa-solid fa-filter mr-1"></i> ARTIFACT SUPPRESSED</span>`;
+        } else if (bed.status === "deteriorating") {
+          cardStateClass = "bed-deteriorating";
+          badgeHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-orange-500/20 text-orange-300 border border-orange-500/40"><i class="fa-solid fa-arrow-trend-down mr-1"></i> EARLY DRIFT WATCH</span>`;
+        } else {
+          badgeHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"><i class="fa-solid fa-check-circle mr-1"></i> STABLE • FUSED</span>`;
+        }
+
+        const hrColor = bed.hr > 115 || bed.hr < 50 ? "text-red-400" : bed.hr > 100 ? "text-orange-400" : "text-emerald-400";
+        const spo2Color = bed.spo2 < 90 ? (bed.status === "suppressed" ? "text-amber-400" : "text-red-400") : bed.spo2 < 93 ? "text-orange-400" : "text-blue-400";
+        const sbpColor = bed.sbp < 90 ? "text-red-400" : bed.sbp < 100 ? "text-orange-400" : "text-slate-100";
+
+        const card = document.createElement("div");
+        card.className = `clinical-card rounded-2xl p-4 flex flex-col justify-between ${cardStateClass}`;
+
+        card.innerHTML = `
+          <div>
+            <!-- Bed Header -->
+            <div class="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="mono text-base font-extrabold text-white">${bed.id}</span>
+                  <span class="text-xs text-slate-400">• ${bed.nurse}</span>
+                </div>
+                <div class="text-xs font-medium text-slate-300 mt-0.5">${bed.patient} <span class="text-slate-500">|</span> <span class="text-slate-400">${bed.diagnosis}</span></div>
+              </div>
+              ${badgeHTML}
+            </div>
+
+            <!-- 3 Vital Parameter Boxes -->
+            <div class="grid grid-cols-3 gap-2.5 mb-3">
+              <div class="bg-[#0b1120] border border-[#23304d] rounded-xl p-2.5 text-center">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Heart Rate</span>
+                <span class="mono text-2xl font-extrabold ${hrColor} block my-0.5">${bed.hr}</span>
+                <span class="text-[10px] text-slate-500 font-semibold">BPM</span>
+              </div>
+
+              <div class="bg-[#0b1120] border border-[#23304d] rounded-xl p-2.5 text-center">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">SpO₂ Sat</span>
+                <span class="mono text-2xl font-extrabold ${spo2Color} block my-0.5">${bed.spo2}%</span>
+                <span class="text-[10px] text-slate-500 font-semibold">OXYGEN</span>
+              </div>
+
+              <div class="bg-[#0b1120] border border-[#23304d] rounded-xl p-2.5 text-center">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Systolic BP</span>
+                <span class="mono text-2xl font-extrabold ${sbpColor} block my-0.5">${bed.sbp}</span>
+                <span class="text-[10px] text-slate-500 font-semibold">mmHg</span>
+              </div>
+            </div>
+
+            <!-- Real-time Canvas ECG / Vital Waveform -->
+            <div class="bg-[#080d19] border border-[#1e293b] rounded-xl p-2 mb-2.5 relative">
+              <div class="flex items-center justify-between text-[10px] text-slate-400 mb-1 px-1">
+                <span class="mono">LEAD-II ECG / PLETH FUSION</span>
+                <span class="mono">Shock Index: <strong class="${shockIndex >= 1.1 ? 'text-red-400' : 'text-slate-200'}">${shockIndex}</strong></span>
+              </div>
+              <canvas id="wave-${index}" width="340" height="46" class="w-full h-[46px] block"></canvas>
+            </div>
+          </div>
+
+          <!-- Footer Status Note OR Interactive Critical Escalation Action -->
+          ${bed.status === "critical" ? `
+            <div class="mt-1 bg-red-950/60 border border-red-500/70 rounded-xl p-2.5 flex items-center justify-between gap-2">
+              <div class="text-xs">
+                <div class="font-extrabold text-red-200">🚨 Paged ${bed.nurse} &amp; Duty MD</div>
+                <div class="text-[11px] text-red-300/90 mono">Escalated: ${bed.escalatedSeconds}s ago</div>
+              </div>
+              <button onclick="acknowledgeEscalation(${index})" class="px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition shadow cursor-pointer shrink-0">
+                <i class="fa-solid fa-check mr-1"></i> Acknowledge &amp; Dispatch
+              </button>
+            </div>
+          ` : `
+            <div class="text-[11px] text-slate-400 flex items-center justify-between px-1 pt-0.5">
+              <span>${bed.statusNote}</span>
+              <span class="mono text-[10px] text-slate-500">1Hz LIVE</span>
+            </div>
+          `}
+        `;
+
+        grid.appendChild(card);
+        drawWaveform(index, bed);
+      });
+    }
+
+    // Draw Realistic ECG-style P-QRS-T Synthetic Waveform on HTML5 Canvas
+    function drawWaveform(idx, bed) {
+      const canvas = document.getElementById(`wave-${idx}`);
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle clinical grid lines
+      ctx.strokeStyle = "rgba(51, 65, 85, 0.25)";
+      ctx.lineWidth = 1;
+      for (let gx = 0; gx < w; gx += 20) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, h);
+        ctx.stroke();
+      }
+
+      // Waveform color by status
+      let strokeColor = "#10b981";
+      if (bed.status === "critical") strokeColor = "#ef4444";
+      else if (bed.status === "suppressed") strokeColor = "#f59e0b";
+      else if (bed.status === "deteriorating") strokeColor = "#fb923c";
+
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      const len = bed.history.length;
+      for (let i = 0; i < len; i++) {
+        const x = (i / (len - 1)) * w;
+        // Map history value around vertical center with sharp R-wave peaks
+        const normalized = (bed.history[i] - 75) / 45;
+        const y = h * 0.58 - normalized * (h * 0.36);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // =========================================================================
+    // SCENARIO 1: Simulate Probe Slip / Motion Artifact (Bed 02)
+    // =========================================================================
+    function simulateProbeSlip() {
+      const bed = beds[1]; // BED-02
+      bed.spo2 = 79; // Sudden impossible drop from 95% -> 79% in 1 second
+      bed.hr = 85;   // Heart rate remains calm
+      bed.sbp = 117; // Blood pressure remains rock steady
+      bed.status = "suppressed";
+      bed.statusNote = "SpO₂ sensor artifact isolated; audible alarm muted";
+
+      kpiRaw++;
+      kpiSuppressed++;
+      updateKPIUI();
+      renderBeds();
+      playClinicalChime("confirm");
+
+      appendTriageLog({
+        title: "Single-Sensor Motion Artifact Suppressed",
+        bedId: bed.id,
+        formula: "ΔSpO₂ = -16% (79%) | ΔHR = +1.2% (85 BPM) | SI = 0.73",
+        detail: "Pulse oximeter dropped abruptly without compensatory tachycardia or hypotension. Classified as finger probe slip. Audible ward siren suppressed.",
+        level: "suppressed"
+      });
+
+      // Auto-recover sensor contact after 7 seconds if still suppressed
+      setTimeout(() => {
+        if (bed.status === "suppressed") {
+          bed.spo2 = 95;
+          bed.status = "normal";
+          bed.statusNote = "Sensor contact restored • All vitals concordant";
+          renderBeds();
+        }
+      }, 7000);
+    }
+
+    // =========================================================================
+    // SCENARIO 2: Simulate Multi-Vital Shock Event (Bed 03)
+    // =========================================================================
+    function simulateShockEvent() {
+      const bed = beds[2]; // BED-03
+      bed.hr = 146;
+      bed.spo2 = 83;
+      bed.sbp = 78;
+      bed.status = "critical";
+      bed.statusNote = "CRITICAL: Multi-vital hemodynamic collapse";
+      bed.escalatedSeconds = 0;
+
+      kpiRaw++;
+      kpiCritical++;
+      updateKPIUI();
+      renderBeds();
+      playClinicalChime("critical");
+
+      appendTriageLog({
+        title: "Acute Hemodynamic Shock — Tier-1 Escalation",
+        bedId: bed.id,
+        formula: "HR 146 BPM + SpO₂ 83% + SBP 78 mmHg | Shock Index = 1.87 (≥ 1.1)",
+        detail: "3-parameter physiological concordance verified across ECG, Pleth, and Arterial line. Bypassed suppression filter -> Dispatched urgent alert to Nurse Ananya & ICU Intensivist.",
+        level: "critical"
+      });
+    }
+
+    // =========================================================================
+    // SCENARIO 3: Simulate Progressive Deterioration (Bed 01)
+    // =========================================================================
+    function simulateProgressiveDeterioration() {
+      if (deteriorationInterval) clearInterval(deteriorationInterval);
+
+      const bed = beds[0]; // BED-01
+      bed.status = "deteriorating";
+      bed.deteriorationStep = 1;
+      bed.hr = 104;
+      bed.spo2 = 92;
+      bed.sbp = 104;
+      bed.statusNote = "Early trajectory drift detected (Step 1/3)";
+
+      renderBeds();
+      playClinicalChime("confirm");
+
+      appendTriageLog({
+        title: "Progressive Multi-Vital Drift Detected",
+        bedId: bed.id,
+        formula: "Slope(HR) +18 BPM/min | Slope(SBP) -14 mmHg/min | SI = 1.00",
+        detail: "Sub-threshold upward HR drift paired with downward BP trend. Tracking sliding 5-second window for early sepsis/bleed onset...",
+        level: "warning"
+      });
+
+      deteriorationInterval = setInterval(() => {
+        if (bed.status !== "deteriorating") {
+          clearInterval(deteriorationInterval);
+          return;
+        }
+
+        bed.deteriorationStep++;
+        if (bed.deteriorationStep === 2) {
+          bed.hr = 118;
+          bed.spo2 = 90;
+          bed.sbp = 95;
+          bed.statusNote = "Trajectory worsening (Step 2/3) — Pre-alerting nurse";
+          renderBeds();
+        } else if (bed.deteriorationStep >= 3) {
+          clearInterval(deteriorationInterval);
+          bed.hr = 134;
+          bed.spo2 = 87;
+          bed.sbp = 84;
+          bed.status = "critical";
+          bed.escalatedSeconds = 0;
+
+          kpiRaw++;
+          kpiCritical++;
+          updateKPIUI();
+          renderBeds();
+          playClinicalChime("critical");
+
+          appendTriageLog({
+            title: "Progressive Deterioration Breached Critical Threshold",
+            bedId: bed.id,
+            formula: "HR 134 BPM + SpO₂ 87% + SBP 84 mmHg | Shock Index = 1.60",
+            detail: "Sustained multi-parameter decompensation confirmed. Escalated to Tier-1 Emergency for Nurse Kavita & Duty Doctor.",
+            level: "critical"
+          });
+        }
+      }, 2200);
+    }
+
+    // Nurse Acknowledgment & Dispatch Handler
+    function acknowledgeEscalation(idx) {
+      const bed = beds[idx];
+      const responseTime = bed.escalatedSeconds;
+      bed.status = "normal";
+      bed.hr = 88;
+      bed.spo2 = 96;
+      bed.sbp = 114;
+      bed.deteriorationStep = 0;
+      bed.statusNote = "Intervention active • Vitals stabilizing";
+
+      playClinicalChime("confirm");
+      renderBeds();
+
+      appendTriageLog({
+        title: `Crisis Acknowledged by ${bed.nurse}`,
+        bedId: bed.id,
+        formula: `Door-to-Nurse Response Time: ${responseTime}s`,
+        detail: "Bedside clinical team dispatched and intervention logged in EHR audit trail.",
+        level: "resolved"
+      });
+    }
+
+    // Reset Ward to Baseline
+    function resetWard() {
+      if (deteriorationInterval) clearInterval(deteriorationInterval);
+      beds = initialBeds();
+      kpiRaw = 148;
+      kpiSuppressed = 144;
+      kpiCritical = 4;
+      updateKPIUI();
+      renderBeds();
+      playClinicalChime("confirm");
+
+      appendTriageLog({
+        title: "Ward Telemetry Baselines Recalibrated",
+        bedId: "WARD-4A",
+        detail: "All 4 bedside monitors reset to stable baseline parameters.",
+        level: "info"
+      });
+    }
+
+    // 1Hz Continuous Live Telemetry Loop
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("stream-clock").innerText =
+        "SYNC: " + now.toLocaleTimeString("en-IN", { hour12: false });
+
+      beds.forEach((bed) => {
+        bed.phase += 0.9;
+
+        // Subtle natural physiological beat-to-beat variability when stable
+        if (bed.status === "normal") {
+          const jitterHr = Math.floor(Math.random() * 3) - 1;
+          bed.hr = Math.max(66, Math.min(94, bed.hr + jitterHr));
+          const jitterBp = Math.floor(Math.random() * 3) - 1;
+          bed.sbp = Math.max(108, Math.min(132, bed.sbp + jitterBp));
+        }
+
+        if (bed.status === "critical") {
+          bed.escalatedSeconds++;
+        }
+
+        // Generate synthetic QRS complex spike every ~4 samples for realistic ECG look
+        const cycle = Math.floor(bed.phase * 1.4) % 5;
+        let waveSample = bed.hr;
+        if (cycle === 2) waveSample = bed.hr + (bed.status === "critical" ? 36 : 24); // R-peak
+        else if (cycle === 3) waveSample = bed.hr - 14; // S-wave dip
+        else waveSample = bed.hr + Math.sin(bed.phase) * 4;
+
+        bed.history.push(waveSample);
+        if (bed.history.length > 42) bed.history.shift();
+      });
+
+      renderBeds();
+    }, 1000);
+
+    // Boot Sequence
+    updateKPIUI();
+    renderBeds();
+    appendTriageLog({
+      title: "VIGIL_ICU Telemetry Engine Online",
+      bedId: "WARD-4A",
+      formula: "Active Streams: 4 Beds × 3 Vitals (12 Channels @ 1Hz)",
+      detail: "Multi-parameter artifact suppression active. Ready for live clinical simulation.",
+      level: "info"
+    });
+  </script>
+</body>
+</html>
